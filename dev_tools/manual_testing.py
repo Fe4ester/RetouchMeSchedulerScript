@@ -6,8 +6,8 @@ Manual tests для monitor.py — простые функции с выводо
 
 import os
 from datetime import datetime, timedelta
-import script.main as main
-import script.config as config
+import main
+import config
 
 
 def test_init_driver():
