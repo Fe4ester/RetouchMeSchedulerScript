@@ -17,7 +17,7 @@ def init_driver():
     options = Options()
 
     # example = "/Users/you/Library/Application Support/Google/Chrome/Default"
-    profile_path = os.path.expanduser("~/any")
+    profile_path = os.path.expanduser(config.PROFILE_PATH)
 
     options.add_argument(f"--user-data-dir={profile_path}")
 
