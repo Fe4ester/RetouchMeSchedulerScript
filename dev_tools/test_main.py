@@ -107,7 +107,8 @@ def monitor():
             driver.refresh()
         except UnexpectedAlertPresentException:
             try:
-                confirm_alert(driver)
+                # confirm_alert(driver)
+                logger.info(f"Агааа не проебашим")
             except:
                 pass
         except NoSuchElementException:
