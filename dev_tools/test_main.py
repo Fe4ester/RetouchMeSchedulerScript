@@ -58,10 +58,10 @@ def in_desired_date(ts):
     return config.DATE_START <= date_str <= config.DATE_END
 
 
-def confirm_alert(driver):
-    WebDriverWait(driver, 5).until(EC.alert_is_present())
-    alert = driver.switch_to.alert
-    alert.accept()
+# def confirm_alert(driver):
+#     WebDriverWait(driver, 5).until(EC.alert_is_present())
+#     alert = driver.switch_to.alert
+#     alert.accept()
 
 
 def monitor():
