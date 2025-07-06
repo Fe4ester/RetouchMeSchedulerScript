@@ -12,6 +12,8 @@ from selenium.webdriver.support import expected_conditions as EC
 import config
 
 LOGGING = True
+TEST_MODE = True  # True — не брать смены, только симулировать
+
 logger = logging.getLogger(__name__)
 if LOGGING:
     logging.basicConfig(
@@ -21,6 +23,7 @@ if LOGGING:
     )
 else:
     logging.basicConfig(level=logging.WARNING)
+
 
 def init_driver():
     if LOGGING:
@@ -34,6 +37,7 @@ def init_driver():
         logger.info("WebDriver запущен успешно")
     return driver
 
+
 def get_row_hour(element):
     row = element.find_element(By.XPATH, "./ancestor::tr")
     hour_str = row.find_element(By.XPATH, "./th").text.strip()
@@ -42,14 +46,17 @@ def get_row_hour(element):
     except ValueError:
         return None
 
+
 def parse_date_ts(element):
     slot = element.find_element(By.XPATH, "./ancestor::div[contains(@class,'slot')]")
     return int(slot.get_attribute("data-timestamp"))
+
 
 def in_desired_date(ts):
     dt = datetime.fromtimestamp(ts)
     date_str = dt.strftime("%Y-%m-%d")
     return config.DATE_START <= date_str <= config.DATE_END
+
 
 def confirm_alert(driver):
     WebDriverWait(driver, 5).until(EC.alert_is_present())
@@ -61,7 +68,7 @@ def monitor():
     driver = init_driver()
     driver.get(config.URL)
     if LOGGING:
-        logger.info("Пауза 60 секунд для авторизации")
+        logger.info("Пауза для авторизации (60s)")
     time.sleep(60)
     if LOGGING:
         logger.info("Начинаем мониторинг")
@@ -77,23 +84,18 @@ def monitor():
             )
             for btn in buttons:
                 row_hour = get_row_hour(btn)
-                if row_hour is None:
-                    continue
-                if not (config.HOUR_START <= row_hour <= config.HOUR_END):
-                    if LOGGING:
-                        logger.info(f"{row_hour} вне диапазона часов")
+                if row_hour is None or not (config.HOUR_START <= row_hour <= config.HOUR_END):
                     continue
                 ts = parse_date_ts(btn)
                 if not in_desired_date(ts):
-                    if LOGGING:
-                        logger.info("Дата вне диапазона")
                     continue
                 date_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
                 key = (date_str, row_hour)
                 if key in taken:
-                    if LOGGING:
-                        logger.info(f"{key} уже захвачен")
                     continue
+                if TEST_MODE:
+                    logger.info(f"[TEST] Слот доступен для захвата: {key}")
+                    return
                 if LOGGING:
                     logger.info(f"Захватываем слот {key}")
                 btn.click()
