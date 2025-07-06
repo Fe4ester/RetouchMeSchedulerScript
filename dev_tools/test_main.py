@@ -99,7 +99,8 @@ def monitor():
                 if LOGGING:
                     logger.info(f"Захватываем слот {key}")
                 btn.click()
-                confirm_alert(driver)
+                # confirm_alert(driver)
+                logger.info(f"Ага хуй там")
                 taken.add(key)
                 if LOGGING:
                     logger.info(f"Слот захвачен {key}")
