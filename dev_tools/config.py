@@ -14,3 +14,5 @@ HOUR_END   = 18  # до 8 вечера
 
 # интервал между обновлениями страницы (в секундах)
 REFRESH_INTERVAL = 0.2
+
+PROFILE_PATH = r'm/mnt/c/Users/user/AppData/Local/Google/Chrome/User\ Data/Default/'
