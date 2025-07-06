@@ -71,7 +71,7 @@ def monitor():
     driver.get(config.URL)
     if LOGGING:
         logger.info("Пауза 60 секунд для авторизации в браузере")
-    time.sleep(60)
+    time.sleep(120)
     if LOGGING:
         logger.info("Пауза завершена, начинаем мониторинг")
     while True:
