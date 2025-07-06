@@ -13,6 +13,8 @@ import config
 
 LOGGING = True
 logger = logging.getLogger(__name__)
+
+
 if LOGGING:
     logging.basicConfig(
         format='[%(asctime)s] %(message)s',
