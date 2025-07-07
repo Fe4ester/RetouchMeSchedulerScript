@@ -16,16 +16,6 @@ def main(profile: str):
     })
     driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
 
-    # 1.2) Отключаем CSS-анимации и переходы, чтобы рендер жил проще
-    driver.execute_script("""
-        document.body.style.animation = 'none';
-        document.body.style.transition = 'none';
-        document.querySelectorAll('*').forEach(el => {
-            el.style.animation = 'none';
-            el.style.transition = 'none';
-        });
-    """)
-
     # 2) Загружаем страницу расписания
     driver.get(config.URL)
     time.sleep(1)  # ждём полной отрисовки минимально
