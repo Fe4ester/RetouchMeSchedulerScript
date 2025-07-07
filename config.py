@@ -6,7 +6,8 @@ DATE_START = "2025-07-08"
 DATE_END = "2025-07-11"
 HOUR_START = 14
 HOUR_END = 23
-REFRESH_INTERVAL = 0.1  # в секундах
+PER_CELL_DELAY = 0.05
+# REFRESH_INTERVAL = 0.1  # в секундах
 
 # профиля
 BASE_DIR = Path(__file__).parent
