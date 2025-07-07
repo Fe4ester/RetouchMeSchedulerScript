@@ -1,25 +1,42 @@
 # max_perf_clicker_with_alert.py
-# Оптимизированный скрипт без утечек памяти, с корректной синтаксической записью
 import argparse
 import time
 from selenium.common.exceptions import NoAlertPresentException
 from core.driver import init_driver
 import config
 
-
 def main(profile: str):
-    # Инициализация WebDriver и загрузка страницы
+    # 1) Инициализация WebDriver
     driver = init_driver(profile)
+
+    # 1.1) Через CDP блокируем загрузку тяжёлых ресурсов (картинок, шрифтов, CSS)
+    driver.execute_cdp_cmd("Network.enable", {})
+    driver.execute_cdp_cmd("Network.setBlockedURLs", {
+        "urls": ["*.png", "*.jpg", "*.jpeg", "*.svg", "*.css", "*.woff", "*.ttf"]
+    })
+    driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
+
+    # 1.2) Отключаем CSS-анимации и переходы, чтобы рендер жил проще
+    driver.execute_script("""
+        document.body.style.animation = 'none';
+        document.body.style.transition = 'none';
+        document.querySelectorAll('*').forEach(el => {
+            el.style.animation = 'none';
+            el.style.transition = 'none';
+        });
+    """)
+
+    # 2) Загружаем страницу расписания
     driver.get(config.URL)
-    time.sleep(1)  # ждем полной загрузки
+    time.sleep(1)  # ждём полной отрисовки минимально
 
-    # Диапазоны из конфига
-    sd = config.DATE_START  # 'YYYY-MM-DD'
-    ed = config.DATE_END    # 'YYYY-MM-DD'
-    sh = config.HOUR_START  # 0–23 локальный час начала
-    eh = config.HOUR_END    # 0–23 локальный час конца
+    # 3) Параметры из config
+    sd = config.DATE_START
+    ed = config.DATE_END
+    sh = config.HOUR_START
+    eh = config.HOUR_END
 
-    # JS-инъекция: MutationObserver + ротационный reload + очистка интервалов
+    # 4) JS-инъекция (MutationObserver + ротация + очистка раз в 5 минут)
     js = f"""
 (function() {{
   const sd = '{sd}', ed = '{ed}', sh = {sh}, eh = {eh};
@@ -31,25 +48,22 @@ def main(profile: str):
       .map(el => el.getAttribute('data-timestamp'))
       .filter(ts => {{
         const d = new Date(Number(ts) * 1000);
-        const dateStr = d.toISOString().slice(0,10);
-        const hour = d.getHours();
-        return dateStr >= sd && dateStr <= ed && hour >= sh && hour <= eh;
+        const ds = d.toISOString().slice(0,10);
+        const h = d.getHours();
+        return ds >= sd && ds <= ed && h >= sh && h <= eh;
       }});
     idx = 0;
   }}
 
   function reloadNext() {{
-    if (tsList.length === 0) return;
+    if (!tsList.length) return;
     const ts = tsList[idx++ % tsList.length];
-    const selector = 'div.slot[data-timestamp="' + ts + '"]';
-    const slot = document.querySelector(selector);
+    const slot = document.querySelector(`div.slot[data-timestamp="${{ts}}"]`);
     if (!slot) return;
-    const reloadBtn = slot.querySelector('[data-btn_reload]');
-    if (reloadBtn) reloadBtn.click();
-    const reserveBtn = slot.querySelector('button.btn-replace');
-    if (reserveBtn && reserveBtn.textContent.trim() === 'R') {{
-      reserveBtn.click();
-    }}
+    const r = slot.querySelector('[data-btn_reload]');
+    if (r) r.click();
+    const btn = slot.querySelector('button.btn-replace');
+    if (btn && btn.textContent.trim()==='R') btn.click();
   }}
 
   function startIntervals() {{
@@ -59,35 +73,26 @@ def main(profile: str):
       clearInterval(cleanupIntervalId);
       buildList();
       startIntervals();
-    }}, 5 * 60 * 1000);
+    }}, 5*60*1000);
   }}
 
-  // Обработчик появления кнопки R через MutationObserver
-  const observer = new MutationObserver(mutations => {{
-    for (const m of mutations) {{
-      for (const node of m.addedNodes) {{
-        if (node.nodeType === Node.ELEMENT_NODE) {{
-          const el = node;
-          if (el.matches('button.btn-replace') && el.textContent.trim() === 'R') {{
-            el.click();
-          }}
+  new MutationObserver(muts => {{
+    muts.forEach(m => {{
+      m.addedNodes.forEach(node => {{
+        if (node.nodeType===1 && node.matches('button.btn-replace') && node.textContent.trim()==='R') {{
+          node.click();
         }}
-      }}
-    }}
-  }});
-  const tbody = document.querySelector('table.schedule tbody');
-  if (tbody) observer.observe(tbody, {{ childList: true, subtree: true }});
+      }});
+    }});
+  }}).observe(document.querySelector('table.schedule tbody'), {{ childList:true, subtree:true }});
 
-  // Запуск сборки списка и интервалов
   buildList();
   startIntervals();
 }})();
 """
-
-    # Внедрение JS-кода
     driver.execute_script(js)
 
-    # Цикл Python для обработки alert
+    # 5) Python-цикл: ловим и принимаем alert()
     try:
         while True:
             try:
@@ -95,7 +100,7 @@ def main(profile: str):
                 alert.accept()
             except NoAlertPresentException:
                 pass
-            time.sleep(0.01)
+            time.sleep(0.005)  # ждем 5ms
     except KeyboardInterrupt:
         pass
     finally:
@@ -103,7 +108,6 @@ def main(profile: str):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Clicker без утечек памяти')
-    parser.add_argument('profile', help='имя папки профиля в profiles/')
-    args = parser.parse_args()
-    main(args.profile)
+    p = argparse.ArgumentParser(description='Clicker без утечек памяти, с оптимизацией CPU')
+    p.add_argument('profile', help='имя папки профиля в profiles/')
+    main(p.parse_args().profile)
