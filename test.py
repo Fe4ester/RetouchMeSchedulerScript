@@ -1,12 +1,8 @@
 # max_perf_clicker_with_alert.py
-# Оптимизированный скрипт без утечек и с постоянной работой
-# Логика:
-# 1. JS-инъекция собирает единожды список timestamps нужных ячеек (примитивы),
-# 2. setInterval каждую итерацию по этому списку заново ищет элементы по timestamp,
-#    не храня ссылки на DOM, чтобы избежать stale и утечек.
-# 3. Для каждого timestamp: кликает reload и сразу проверяет наличие "R" кнопки,
-#    кликает по ней и вызывает стандартный alert.
-# 4. Python-цикл ловит и принимает alert, возобновляя JS-интервал.
+# Перепроектированный скрипт без утечек памяти:
+# - Событийная обрабатка появления "R" через MutationObserver
+# - Ротация перезагрузки слотов по индексу (без создания новых массивов каждый тик)
+# - Периодическая чистка интервалов и пересборка структур для сброса памяти
 
 import argparse
 import time
@@ -16,25 +12,27 @@ import config
 
 
 def main(profile: str):
-    # Инициализация и загрузка страницы
+    # 1) Инициализируем драйвер и загружаем страницу
     driver = init_driver(profile)
     driver.get(config.URL)
-    time.sleep(1)
+    time.sleep(1)  # ждем полной загрузки
 
-    # Диапазон из конфига
+    # 2) Параметры из конфига
     sd = config.DATE_START  # 'YYYY-MM-DD'
     ed = config.DATE_END    # 'YYYY-MM-DD'
-    sh = config.HOUR_START  # 0-23 локальный час
-    eh = config.HOUR_END    # 0-23 локальный час
+    sh = config.HOUR_START  # локальный час начала
+    eh = config.HOUR_END    # локальный час конца
 
-    # JS-код
-    js_code = f"""
-    (function() {{
-      const sd = '{sd}', ed = '{ed}', sh = {sh}, eh = {eh};
-      // Собираем TS одной раз
-      const tsList = Array.from(
-        document.querySelectorAll('div.slot[data-timestamp]')
-      )
+    # 3) JS-инъекция: комбинируем MutationObserver + ротационную перезагрузку + очистку каждые 5 минут
+    js = f"""
+(function() {{
+  const sd = '{sd}', ed = '{ed}', sh = {sh}, eh = {eh};
+  let tsList = [], idx = 0;
+  let reloadIntervalId, cleanupIntervalId;
+
+  function buildList() {{
+    // Собираем timestamps нужных слотов
+    tsList = Array.from(document.querySelectorAll('div.slot[data-timestamp]'))
       .map(el => el.getAttribute('data-timestamp'))
       .filter(ts => {{
         const d = new Date(Number(ts) * 1000);
@@ -42,38 +40,63 @@ def main(profile: str):
         const hour = d.getHours();
         return dateStr >= sd && dateStr <= ed && hour >= sh && hour <= eh;
       }});
-      // Основное авто-кликание
-      setInterval(() => {{
-        for (let ts of tsList) {{
-          // Ищем элемент заново по timestamp каждый тик
-          const selector = `div.slot[data-timestamp="${{ts}}"]`;
-          const slot = document.querySelector(selector);
-          if (!slot) continue;
-          // 1) Reload
-          const reloadBtn = slot.querySelector('[data-btn_reload]');
-          if (reloadBtn) reloadBtn.click();
-          // 2) Если кнопка R появилась - клик
-          const reserveBtn = slot.querySelector('button.btn-replace');
-          if (reserveBtn && reserveBtn.textContent.trim() === 'R') {{
-            reserveBtn.click();  // вызовет alert()
-          }}
+    idx = 0;
+  }}
+
+  function reloadNext() {{
+    if (tsList.length === 0) return;
+    const ts = tsList[idx++ % tsList.length];
+    const slot = document.querySelector(`div.slot[data-timestamp="${{ts}}"]`);
+    if (!slot) return;
+    // Перезагрузка слота
+    const r = slot.querySelector('[data-btn_reload]');
+    if (r) r.click();
+    // Если показалась кнопка R — кликаем сразу и ждем alert
+    const btn = slot.querySelector('button.btn-replace');
+    if (btn && btn.textContent.trim() === 'R') btn.click();
+  }}
+
+  function startIntervals() {{
+    // Перезагрузка каждого слота по одному каждые 10ms
+    reloadIntervalId = setInterval(reloadNext, 10);
+    // Каждые 5 минут чистим и пересоздаем список, чтобы освободить память
+    cleanupIntervalId = setInterval(() => {{
+      clearInterval(reloadIntervalId);
+      buildList();
+      startIntervals();
+    }}, 5 * 60 * 1000);
+  }}
+
+  // 1) MutationObserver для мгновенного клика на R-слот
+  const observer = new MutationObserver(muts => {{
+    muts.forEach(m => {{
+      m.addedNodes.forEach(node => {{
+        if (node.matches && node.matches('button.btn-replace') && node.textContent.trim() === 'R') {{
+          node.click();  // вызовет alert
         }}
-      }}, 10);
-    }})();
-    """
+      }});
+    }});
+  }});
+  const tbody = document.querySelector('table.schedule tbody');
+  observer.observe(tbody, {{ childList: true, subtree: true }});
 
-    # Внедрение JS-инъекции
-    driver.execute_script(js_code)
+  // 2) Инициализация списка и интервалов
+  buildList();
+  startIntervals();
+  )();
+"""
 
+    driver.execute_script(js)
+
+    # 4) Python-цикл для обработки alert, без задержек
     try:
-        # Обработка alert
         while True:
             try:
                 alert = driver.switch_to.alert
                 alert.accept()
             except NoAlertPresentException:
                 pass
-            time.sleep(0.01)
+            time.sleep(0.005)  # проверяем чаще
     except KeyboardInterrupt:
         pass
     finally:
@@ -81,9 +104,7 @@ def main(profile: str):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='Ultra-fast, leak-free clicker with alert handling'
-    )
+    parser = argparse.ArgumentParser(description='Clicker with no memory leaks')
     parser.add_argument('profile', help='имя папки профиля в profiles/')
     args = parser.parse_args()
     main(args.profile)
