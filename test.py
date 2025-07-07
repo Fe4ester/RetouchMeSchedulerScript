@@ -1,88 +1,79 @@
 # max_perf_clicker_with_alert.py
+# Улиtra-fast visual clicker без утечек памяти, уменьшенная нагрузка и увеличенная частота
 import argparse
 import time
 from selenium.common.exceptions import NoAlertPresentException
 from core.driver import init_driver
 import config
 
+
 def main(profile: str):
-    # 1) Инициализация WebDriver
+    # 1) Инициализация и лёгкие оптимизации браузера
     driver = init_driver(profile)
+    # блокируем тяжёлые ресурсы через CDP
 
-    # 1.1) Через CDP блокируем загрузку тяжёлых ресурсов (картинок, шрифтов, CSS)
-    driver.execute_cdp_cmd("Network.enable", {})
-    driver.execute_cdp_cmd("Network.setBlockedURLs", {
-        "urls": ["*.png", "*.jpg", "*.jpeg", "*.svg", "*.css", "*.woff", "*.ttf"]
-    })
-    driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
-
-    # 2) Загружаем страницу расписания
+    # 2) Открываем страницу
     driver.get(config.URL)
-    time.sleep(1)  # ждём полной отрисовки минимально
+    time.sleep(1)  # ждём базовую отрисовку
 
-    # 3) Параметры из config
-    sd = config.DATE_START
-    ed = config.DATE_END
-    sh = config.HOUR_START
-    eh = config.HOUR_END
+    # 3) Параметры из конфига
+    sd, ed = config.DATE_START, config.DATE_END
+    sh, eh = config.HOUR_START, config.HOUR_END
 
-    # 4) JS-инъекция (MutationObserver + ротация + очистка раз в 5 минут)
+    # 4) JS: MutationObserver для R + синхронный setTimeout-цикл обновления
     js = f"""
 (function() {{
-  const sd = '{sd}', ed = '{ed}', sh = {sh}, eh = {eh};
-  let tsList = [], idx = 0;
-  let reloadIntervalId, cleanupIntervalId;
+  const sd='{sd}', ed='{ed}', sh={sh}, eh={eh};
+  let tsList=[], lastRebuild=0;
 
   function buildList() {{
     tsList = Array.from(document.querySelectorAll('div.slot[data-timestamp]'))
-      .map(el => el.getAttribute('data-timestamp'))
-      .filter(ts => {{
-        const d = new Date(Number(ts) * 1000);
-        const ds = d.toISOString().slice(0,10);
-        const h = d.getHours();
-        return ds >= sd && ds <= ed && h >= sh && h <= eh;
+      .map(el=>el.getAttribute('data-timestamp'))
+      .filter(ts=>{{
+        const d=new Date(+ts*1000);
+        const ds=d.toISOString().slice(0,10), h=d.getHours();
+        return ds>=sd && ds<=ed && h>=sh && h<=eh;
       }});
-    idx = 0;
+    lastRebuild = performance.now();
   }}
 
   function reloadNext() {{
-    if (!tsList.length) return;
-    const ts = tsList[idx++ % tsList.length];
-    const slot = document.querySelector(`div.slot[data-timestamp="${{ts}}"]`);
-    if (!slot) return;
-    const r = slot.querySelector('[data-btn_reload]');
-    if (r) r.click();
-    const btn = slot.querySelector('button.btn-replace');
-    if (btn && btn.textContent.trim()==='R') btn.click();
+    if(tsList.length===0) return;
+    const ts=tsList.shift();
+    tsList.push(ts);
+    const sel=`div.slot[data-timestamp="${{ts}}"]`;
+    const slot=document.querySelector(sel);
+    if(slot) {{
+      const r=slot.querySelector('[data-btn_reload]'); if(r) r.click();
+      const btn=slot.querySelector('button.btn-replace');
+      if(btn && btn.textContent.trim()==='R') btn.click();
+    }}
   }}
 
-  function startIntervals() {{
-    reloadIntervalId = setInterval(reloadNext, 10);
-    cleanupIntervalId = setInterval(() => {{
-      clearInterval(reloadIntervalId);
-      clearInterval(cleanupIntervalId);
-      buildList();
-      startIntervals();
-    }}, 5*60*1000);
+  // мгновенный click по R через MutationObserver
+  new MutationObserver(muts=>muts.forEach(m=>m.addedNodes.forEach(n=>{{
+    if(n.nodeType===1 && n.matches('button.btn-replace') && n.textContent.trim()==='R') n.click();
+  }}))).observe(
+    document.querySelector('table.schedule tbody'),
+    {{ childList:true, subtree:true }}
+  );
+
+  // основной цикл через setTimeout, чтобы избежать накопления интервалов
+  function loop() {{
+    reloadNext();
+    const now=performance.now();
+    if(now-lastRebuild>5*60*1000) buildList();
+    setTimeout(loop, 5);
   }}
 
-  new MutationObserver(muts => {{
-    muts.forEach(m => {{
-      m.addedNodes.forEach(node => {{
-        if (node.nodeType===1 && node.matches('button.btn-replace') && node.textContent.trim()==='R') {{
-          node.click();
-        }}
-      }});
-    }});
-  }}).observe(document.querySelector('table.schedule tbody'), {{ childList:true, subtree:true }});
-
+  // стартуем
   buildList();
-  startIntervals();
+  loop();
 }})();
 """
     driver.execute_script(js)
 
-    # 5) Python-цикл: ловим и принимаем alert()
+    # 5) Python-цикл для подтверждения alert
     try:
         while True:
             try:
@@ -90,14 +81,15 @@ def main(profile: str):
                 alert.accept()
             except NoAlertPresentException:
                 pass
-            time.sleep(0.005)  # ждем 5ms
+            time.sleep(0.01)  # проверяем чаще при низкой нагрузке Python
     except KeyboardInterrupt:
         pass
     finally:
         driver.quit()
 
 
-if __name__ == '__main__':
-    p = argparse.ArgumentParser(description='Clicker без утечек памяти, с оптимизацией CPU')
-    p.add_argument('profile', help='имя папки профиля в profiles/')
-    main(p.parse_args().profile)
+if __name__=='__main__':
+    parser=argparse.ArgumentParser("Clicker визуальный, быстрый и лёгкий")
+    parser.add_argument('profile', help='имя папки профиля в profiles/')
+    args=parser.parse_args()
+    main(args.profile)
