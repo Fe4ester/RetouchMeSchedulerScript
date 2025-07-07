@@ -1,4 +1,5 @@
 import telebot
+from datetime import datetime
 import config
 
 bot = telebot.TeleBot(config.TELEGRAM_BOT_TOKEN)
@@ -29,7 +30,7 @@ def cmd_test(message):
     )
 
 
-def start_bot(bot):
+def start_bot():
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
 
 
@@ -47,3 +48,20 @@ def send_notification(date_str: str, hour: int, profile: str):
             bot.send_message(chat_id, text, parse_mode='HTML')
         except Exception as e:
             print(f"Ошибка отправки уведомления {chat_id}: {e}")
+
+
+def send_failure_notification(date_str: str, hour: int, profile: str, error: str = None):
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    day_name = dt.strftime("%A")
+    text = (
+        f"<b>RetouchMeScheduler</b>\n"
+        f"Профиль: <code>{profile}</code>\n"
+        f"<b>Не удалось захватить слот:</b> {date_str} ({day_name}) в {hour}:00"
+    )
+    if error:
+        text += f"\nПричина: {error}"
+    for chat_id in config.TELEGRAM_CHAT_IDS:
+        try:
+            bot.send_message(chat_id, text, parse_mode='HTML')
+        except Exception as e:
+            print(f"Ошибка отправки уведомления об ошибке {chat_id}: {e}")
