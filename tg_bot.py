@@ -1,6 +1,7 @@
 import telebot
 from datetime import datetime
 import config
+import logging
 
 bot = telebot.TeleBot(config.TELEGRAM_BOT_TOKEN)
 
@@ -47,7 +48,7 @@ def send_notification(date_str: str, hour: int, profile: str):
         try:
             bot.send_message(chat_id, text, parse_mode='HTML')
         except Exception as e:
-            print(f"Ошибка отправки уведомления {chat_id}: {e}")
+            logging.error(f'ошибка, какая то хуйня {e}')
 
 
 def send_failure_notification(date_str: str, hour: int, profile: str, error: str = None):
@@ -64,4 +65,4 @@ def send_failure_notification(date_str: str, hour: int, profile: str, error: str
         try:
             bot.send_message(chat_id, text, parse_mode='HTML')
         except Exception as e:
-            print(f"Ошибка отправки уведомления об ошибке {chat_id}: {e}")
+            logging.error(f'ошибка, какая то хуйня {chat_id}: {e}')

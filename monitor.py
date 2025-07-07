@@ -1,108 +1,116 @@
-import threading
+import argparse
+import logging
 import time
-import sys
-import logger
-import config
+from selenium.common.exceptions import NoAlertPresentException
 from core.driver import init_driver
-from core.scraper import (
-    find_replace_buttons,
-    get_header_date_map,
-    get_button_date_hour,
-    should_take,
-)
-from selenium.common.exceptions import (
-    NoSuchElementException,
-    UnexpectedAlertPresentException,
-)
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
-from tg_bot import (
-    start_bot,
-    send_notification,
-    send_failure_notification,
-)
+from tg_bot import start_bot
+
+import config
+import logger
 
 
-def confirm_alert(driver):
-    WebDriverWait(driver, 5).until(EC.alert_is_present())
-    driver.switch_to.alert.accept()
+def main(profile: str):
+    driver = init_driver(profile)
 
+    if config.OPTIMISATION:
+        driver.execute_cdp_cmd("Network.enable", {})
+        driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": [
+            "*.png", "*.jpg", "*.jpeg", "*.svg", "*.css", "*.woff", "*.ttf"
+        ]})
+        driver.execute_cdp_cmd("Network.setCacheDisabled", {"cacheDisabled": True})
+        driver.execute_script(
+            "document.querySelectorAll('*').forEach(e=>{e.style.transition='none'; e.style.animation='none';});"
+        )
 
-def is_login_page(driver) -> bool:
-    return config.URL not in driver.current_url
-
-
-def monitor(profile_name: str):
-    driver = init_driver(profile_name)
     driver.get(config.URL)
+    time.sleep(1)
 
-    if is_login_page(driver):
-        logger.logger.error("так ты войди сначала через auth.py")
-        driver.quit()
-        sys.exit(1)
+    sd, ed = config.DATE_START, config.DATE_END
+    sh, eh = config.HOUR_START, config.HOUR_END
 
-    header_date_map = get_header_date_map(driver)
-    logger.logger.info("Начинаем мониторинг...")
-    taken: set[tuple[str, int]] = set()
+    js = f"""
+(function() {{
+  const sd='{sd}', ed='{ed}', sh={sh}, eh={eh};
+  let tsList=[], lastRebuild=0;
 
-    while True:
-        try:
-            buttons = find_replace_buttons(driver)
-            for btn in buttons:
-                date_str, hour = get_button_date_hour(btn, header_date_map)
-                key = (date_str, hour)
+  function buildList() {{
+    tsList = Array.from(document.querySelectorAll('div.slot[data-timestamp]'))
+      .map(el=>el.getAttribute('data-timestamp'))
+      .filter(ts=>{{
+        const d=new Date(+ts*1000);
+        const ds=d.toISOString().slice(0,10), h=d.getHours();
+        return ds>=sd && ds<=ed && h>=sh && h<=eh;
+      }});
+    lastRebuild = performance.now();
+  }}
 
-                if key in taken:
-                    logger.logger.debug(f"{key} уже захвачен")
-                    continue
+  function reloadNext() {{
+    if(!tsList.length) return;
+    const ts=tsList.shift(); tsList.push(ts);
+    const sel=`div.slot[data-timestamp="${{ts}}"]`;
+    const slot=document.querySelector(sel);
+    if(slot) {{
+      const r=slot.querySelector('[data-btn_reload]'); if(r) r.click();
+      const btn=slot.querySelector('button.btn-replace');
+      if(btn && btn.textContent.trim()==='R') btn.click();
+    }}
+  }}
 
-                if should_take(date_str, hour):
-                    logger.logger.info(f"захватываем слот {key}")
-                    try:
-                        btn.click()
-                        confirm_alert(driver)
-                        taken.add(key)
-                        logger.logger.info(f"слот захвачен {key}")
-                        # уведомление об успехе
-                        threading.Thread(
-                            target=send_notification,
-                            args=(date_str, hour, profile_name),
-                            daemon=True
-                        ).start()
-                    except Exception as e:
-                        logger.logger.error(f"Не удалось захватить слот {key}: {e}")
-                        threading.Thread(
-                            target=send_failure_notification,
-                            args=(date_str, hour, profile_name, str(e)),
-                            daemon=True
-                        ).start()
+  // Мгновенный клик по R через MutationObserver
+  new MutationObserver(muts=>muts.forEach(m=>m.addedNodes.forEach(n=>{{
+    if(n.nodeType===1 && n.matches('button.btn-replace') && n.textContent.trim()==='R') n.click();
+  }}))).observe(
+    document.querySelector('table.schedule tbody'),
+    {{ childList:true, subtree:true }}
+  );
 
-            time.sleep(config.REFRESH_INTERVAL)
-            driver.refresh()
+  // Основной цикл через setTimeout
+  function loop() {{
+    reloadNext();
+    const now=performance.now();
+    if(now-lastRebuild>5*60*1000) buildList();
+    setTimeout(loop, 5);
+  }}
 
-        except UnexpectedAlertPresentException:
+  buildList();
+  loop();
+}})();
+"""
+    driver.execute_script(js)
+
+    try:
+        while True:
             try:
-                confirm_alert(driver)
-            except:
+                alert = driver.switch_to.alert
+                text = alert.text
+                alert.accept()
+                logger.logger.info(f"впиздячили смену, чекай сайт{text}")
+            except NoAlertPresentException:
                 pass
-        except NoSuchElementException:
-            time.sleep(config.REFRESH_INTERVAL)
-            driver.refresh()
+            time.sleep(config.PER_CELL_DELAY)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        driver.quit()
 
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Мониторинг смен с Telegram")
-    parser.add_argument(
-        "profile",
-        type=str,
-        help="имя профиля (папка в profiles/)"
-    )
+if __name__=='__main__':
+    parser = argparse.ArgumentParser(description='хуйня галимая')
+    parser.add_argument('profile', help='имя папки профиля в profiles/')
     args = parser.parse_args()
 
-    # старт бота в фоне
-    threading.Thread(target=start_bot, daemon=True).start()
-    # запуск мониторинга
-    monitor(args.profile)
+    import os, errno
+    lock_file = os.path.join(os.getcwd(), 'retouchme_bot.lock')
+    try:
+        fd = os.open(lock_file, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+    except OSError as e:
+        if e.errno == errno.EEXIST:
+            logging.info('стартанули тг бота')
+        else:
+            raise
+    else:
+        from threading import Thread
+        Thread(target=start_bot, daemon=True).start()
+
+    main(args.profile)

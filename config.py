@@ -2,18 +2,22 @@ from pathlib import Path
 
 # url не менять а то наебнется все
 URL = "https://retouchme.com/backend2/duty/design/schedule"
+
 DATE_START = "2025-07-08"
 DATE_END = "2025-07-11"
 HOUR_START = 14
 HOUR_END = 23
-PER_CELL_DELAY = 0.05
-REFRESH_INTERVAL = 0.1  # в секундах
+
+OPEN_WINDOW = False
+OPTIMISATION = False
+
+PER_CELL_DELAY = 0.01
 
 # профиля
 BASE_DIR = Path(__file__).parent
 PROFILES_DIR = BASE_DIR / "profiles"
 
-# логи - для шарящих, так ставишь ERROR
+# логи - для шарящих, так ставишь INFO
 LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 LOG_FORMAT = "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
 
