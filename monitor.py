@@ -13,11 +13,10 @@ from core.scraper import (
 from selenium.common.exceptions import (
     NoSuchElementException,
     UnexpectedAlertPresentException,
-    ElementClickInterceptedException,
-    StaleElementReferenceException,
 )
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
 from tg_bot import (
     start_bot,
     send_notification,
@@ -34,15 +33,6 @@ def is_login_page(driver) -> bool:
     return config.URL not in driver.current_url
 
 
-def safe_click(driver, element):
-    # Скроллим к элементу и кликаем, с fallback через JS
-    driver.execute_script("arguments[0].scrollIntoView(true);", element)
-    try:
-        element.click()
-    except ElementClickInterceptedException:
-        driver.execute_script("arguments[0].click();", element)
-
-
 def monitor(profile_name: str):
     driver = init_driver(profile_name)
     driver.get(config.URL)
@@ -54,19 +44,15 @@ def monitor(profile_name: str):
 
     header_date_map = get_header_date_map(driver)
     logger.logger.info("Начинаем мониторинг...")
-    taken = set()
+    taken: set[tuple[str, int]] = set()
 
     while True:
         try:
             buttons = find_replace_buttons(driver)
             for btn in buttons:
-                # Пытаемся получить дату и час, пропуская stale-элементы
-                try:
-                    date_str, hour = get_button_date_hour(btn, header_date_map)
-                except StaleElementReferenceException:
-                    continue
-
+                date_str, hour = get_button_date_hour(btn, header_date_map)
                 key = (date_str, hour)
+
                 if key in taken:
                     logger.logger.debug(f"{key} уже захвачен")
                     continue
@@ -74,10 +60,11 @@ def monitor(profile_name: str):
                 if should_take(date_str, hour):
                     logger.logger.info(f"захватываем слот {key}")
                     try:
-                        safe_click(driver, btn)
+                        btn.click()
                         confirm_alert(driver)
                         taken.add(key)
                         logger.logger.info(f"слот захвачен {key}")
+                        # уведомление об успехе
                         threading.Thread(
                             target=send_notification,
                             args=(date_str, hour, profile_name),
@@ -92,16 +79,7 @@ def monitor(profile_name: str):
                         ).start()
 
             time.sleep(config.REFRESH_INTERVAL)
-            # Частичное обновление таблицы через JS для скорости
-            driver.execute_script("""
-                fetch(arguments[0], {credentials:'include'})
-                  .then(r=>r.text())
-                  .then(html=>{
-                      const doc=new DOMParser().parseFromString(html,'text/html');
-                      const newTbl=doc.querySelector('table.schedule');
-                      document.querySelector('table.schedule').replaceWith(newTbl);
-                  });
-            """, config.URL)
+            driver.refresh()
 
         except UnexpectedAlertPresentException:
             try:
@@ -110,14 +88,21 @@ def monitor(profile_name: str):
                 pass
         except NoSuchElementException:
             time.sleep(config.REFRESH_INTERVAL)
-            driver.execute_script("location.reload();")
+            driver.refresh()
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="Мониторинг смен с Telegram")
-    parser.add_argument("profile", type=str, help="имя профиля (папка в profiles/)")
+    parser.add_argument(
+        "profile",
+        type=str,
+        help="имя профиля (папка в profiles/)"
+    )
     args = parser.parse_args()
 
+    # старт бота в фоне
     threading.Thread(target=start_bot, daemon=True).start()
+    # запуск мониторинга
     monitor(args.profile)
