@@ -24,10 +24,8 @@ from tg_bot import (
 )
 
 
-def confirm_alert(driver):
-    WebDriverWait(driver, 5).until(EC.alert_is_present())
-    driver.switch_to.alert.accept()
-
+def confirm_alert(dr):
+    WebDriverWait(dr,5).until(EC.alert_is_present()); dr.switch_to.alert.accept()
 
 def is_login_page(driver) -> bool:
     return config.URL not in driver.current_url
@@ -79,7 +77,15 @@ def monitor(profile_name: str):
                         ).start()
 
             time.sleep(config.REFRESH_INTERVAL)
-            driver.refresh()
+            driver.execute_script("""
+                        fetch(arguments[0], {credentials: 'include'})
+                          .then(res => res.text())
+                          .then(html => {
+                              const doc = new DOMParser().parseFromString(html, 'text/html');
+                              const newTbl = doc.querySelector('table.schedule');
+                              document.querySelector('table.schedule').replaceWith(newTbl);
+                          });
+                    """, config.URL)
 
         except UnexpectedAlertPresentException:
             try:
