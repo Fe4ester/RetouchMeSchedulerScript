@@ -6,6 +6,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import StaleElementReferenceException
 from core.driver import init_driver
 import config
 
@@ -18,40 +19,47 @@ def ts_in_range(ts: int) -> bool:
            (config.HOUR_START <= hour <= config.HOUR_END)
 
 
-def click_slot(driver, slot_div):
+def click_slot_by_ts(driver, ts: str):
     try:
-        # Скроллим ячейку в центр и кликаем reload-кнопку
-        driver.execute_script(
-            "arguments[0].scrollIntoView({block: 'center'});",
-            slot_div
-        )
+        # Найти ячейку по timestamp свежим селектором
+        slot_div = driver.find_element(By.CSS_SELECTOR, f"div.slot[data-timestamp='{ts}']")
+        # Прокручиваем в центр и кликаем reload-кнопку
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", slot_div)
+        time.sleep(0.02)
         btn = slot_div.find_element(By.CSS_SELECTOR, "[data-btn_reload]")
         driver.execute_script("arguments[0].click();", btn)
+    except StaleElementReferenceException:
+        print(f"Stale element for timestamp {ts}, пропускаем")
     except Exception as e:
-        print(f"Error clicking slot {slot_div.get_attribute('data-timestamp')}: {e}")
+        print(f"Error clicking slot {ts}: {e}")
 
 
 def main(profile: str):
     driver = init_driver(profile)
     driver.get(config.URL)
-    time.sleep(1)  # ждём полной загрузки
+    time.sleep(1)
 
     print("Старт бесконечных кликов по всем ячейкам в диапазоне...")
     try:
         while True:
-            # Сканируем слоты
-            all_slots = driver.find_elements(By.CSS_SELECTOR, "div.slot[data-timestamp]")
-            slots = [
-                div for div in all_slots
-                if ts_in_range(int(div.get_attribute("data-timestamp")))
-            ]
-            if slots:
-                # Параллельно кликаем по всем найденным ячейкам
-                with ThreadPoolExecutor(max_workers=len(slots)) as executor:
-                    futures = [executor.submit(click_slot, driver, slot) for slot in slots]
+            # Сканируем текущие timestamps
+            ts_list = []
+            for div in driver.find_elements(By.CSS_SELECTOR, "div.slot[data-timestamp]"):
+                try:
+                    ts = div.get_attribute("data-timestamp")
+                except StaleElementReferenceException:
+                    continue
+                if ts and ts_in_range(int(ts)):
+                    ts_list.append(ts)
+
+            if ts_list:
+                # Параллельно кликаем по свежим элементам
+                max_workers = min(len(ts_list), 10)
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = [executor.submit(click_slot_by_ts, driver, ts) for ts in ts_list]
                     for _ in as_completed(futures):
                         pass
-            # Очень короткая пауза перед следующим циклом
+
             time.sleep(0.01)
     except KeyboardInterrupt:
         print("Остановлено пользователем.")
