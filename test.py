@@ -1,60 +1,60 @@
-# max_perf_clicker.py
-# Скрипт для максимально быстрого параллельного клика по ячейкам в указанном диапазоне
-
 import argparse
 import time
-from selenium.webdriver.common.by import By
 from core.driver import init_driver
 import config
 
 
 def main(profile: str):
-    # Инициализация WebDriver с заданным профилем
+    # Инициализация WebDriver с указанным профилем
     driver = init_driver(profile)
-    # Открываем целевую страницу
+    # Открываем страницу расписания
     driver.get(config.URL)
-    # Ждём прогрева страницы после загрузки
+    # Ждем загрузки и рендеринга
     time.sleep(1)
 
-    # Считываем границы диапазона из конфига
+    # Читаем из config диапазон дат и часов (локальных)
     start_date = config.DATE_START    # формат YYYY-MM-DD
     end_date = config.DATE_END        # формат YYYY-MM-DD
-    start_hour = config.HOUR_START
-    end_hour = config.HOUR_END
+    start_hour = config.HOUR_START    # локальный час начала
+    end_hour = config.HOUR_END        # локальный час конца
 
-    # Пред-компилированный JS, который:
-    # - Берёт все div.slot с data-timestamp
-    # - Преобразует timestamp в дату (YYYY-MM-DD) и час (UTC)
-    # - Фильтрует по диапазону дат и часов
-    # - Кликает по внутренней кнопке [data-btn_reload]
+    # JS-код, который:
+    # 1. Селектит все <div.slot data-timestamp>
+    # 2. По timestamp создает Date, берет локальный час через .getHours()
+    # 3. Фильтрует по дате и часу из config
+    # 4. Кликает по кнопке [data-btn_reload] внутри ячейки
     js_clicker = f"""
-    const slots = document.querySelectorAll('div.slot[data-timestamp]');
-    const sd = '{start_date}';
-    const ed = '{end_date}';
-    const sh = {start_hour};
-    const eh = {end_hour};
-    for (let s of slots) {{
+    (function() {{
+      const slots = document.querySelectorAll('div.slot[data-timestamp]');
+      const sd = '{start_date}';
+      const ed = '{end_date}';
+      const sh = {start_hour};
+      const eh = {end_hour};
+      for (let s of slots) {{
         const ts = Number(s.getAttribute('data-timestamp'));
         const d = new Date(ts * 1000);
         const date = d.toISOString().slice(0,10);
-        const h = d.getUTCHours();
+        const h = d.getHours();  // локальный час вместо UTC
         if (date >= sd && date <= ed && h >= sh && h <= eh) {{
-            const btn = s.querySelector('[data-btn_reload]');
-            if (btn) btn.click();
+          const btn = s.querySelector('[data-btn_reload]');
+          if (btn) btn.click();
         }}
-    }}
+      }}
+    }})();
     """
 
-    # Основной бесконечный цикл: исполняем JS-кликер и даём минимальную паузу
+    # Основной бесконечный цикл
     try:
         while True:
-            driver.execute_script(js_clicker)  # клик по всем нужным ячейкам
-            time.sleep(0.01)                  # минимальная пауза
+            # Запускаем JS-кликер, обновляем все ячейки за одну итерацию
+            driver.execute_script(js_clicker)
+            # Пауза между итерациями, можно уменьшить для большей частоты
+            time.sleep(config.PER_CELL_DELAY)
     except KeyboardInterrupt:
-        # Остановка по Ctrl+C
+        # Позволяет выйти по Ctrl+C без ошибок
         pass
     finally:
-        # Корректное завершение работы драйвера
+        # Закрываем драйвер корректно
         driver.quit()
 
 
