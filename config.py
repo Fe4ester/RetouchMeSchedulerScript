@@ -20,6 +20,3 @@ PROFILES_DIR = BASE_DIR / "profiles"
 # логи - для шарящих, так ставишь INFO
 LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR
 LOG_FORMAT = "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
-
-TELEGRAM_BOT_TOKEN = "7866707915:AAFtP8ryM7Jzp8KpelkVNMaHcq8Kg_4BDYM"
-TELEGRAM_CHAT_IDS = [690056650]
