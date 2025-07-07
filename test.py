@@ -1,66 +1,61 @@
-# max_perf_clicker.py
-# Скрипт для максимально быстрой работы: JS-инъекция с setInterval в браузере
+# max_perf_clicker_with_alert.py
+
 import argparse
 import time
+from selenium.common.exceptions import NoAlertPresentException
 from core.driver import init_driver
 import config
 
 def main(profile: str):
-    # Инициализация WebDriver и загрузка страницы
     driver = init_driver(profile)
     driver.get(config.URL)
-    time.sleep(1)  # ждем полной загрузки
+    time.sleep(1)
 
-    # Читаем диапазон из config
-    sd = config.DATE_START  # YYYY-MM-DD
-    ed = config.DATE_END    # YYYY-MM-DD
-    sh = config.HOUR_START  # локальный час начала
-    eh = config.HOUR_END    # локальный час конца
+    # границы из конфига
+    sd, ed = config.DATE_START, config.DATE_END
+    sh, eh = config.HOUR_START, config.HOUR_END
 
-    # Формируем JS для инъекции:
-    # - Отключаем alert/confirm, чтобы не блокировали клик
-    # - Запускаем setInterval каждые 10ms
-    # - Внутри: находим и кликаем по reload и сразу по R
+    # JS-инъекция без подавления alert/confirm
     js = f"""
     (function() {{
-      // Бесконечное авто-кликание внутри браузера
-      window.alert = function(){{}};
-      window.confirm = function(){{return true;}};
-      const sd = '{sd}'; const ed = '{ed}';
-      const sh = {sh}; const eh = {eh};
+      const sd = '{sd}', ed = '{ed}', sh = {sh}, eh = {eh};
       setInterval(() => {{
-        document.querySelectorAll('div.slot[data-timestamp]').forEach(s => {{
-          const ts = +s.getAttribute('data-timestamp');
-          const d = new Date(ts * 1000);
-          const date = d.toISOString().slice(0,10);
-          const h = d.getHours();
-          if (date >= sd && date <= ed && h >= sh && h <= eh) {{
-            // принудительный reload ячейки
-            const r = s.querySelector('[data-btn_reload]');
-            if (r) r.click();
-            // если появилась кнопка R — кликаем
-            const btn = s.querySelector('button.btn-replace');
-            if (btn && btn.textContent.trim() === 'R') btn.click();
-          }}
-        }});
+        document
+          .querySelectorAll('div.slot[data-timestamp]')
+          .forEach(s => {{
+            const ts = +s.getAttribute('data-timestamp');
+            const d = new Date(ts*1000);
+            const date = d.toISOString().slice(0,10), h = d.getHours();
+            if (date >= sd && date <= ed && h >= sh && h <= eh) {{
+              const r = s.querySelector('[data-btn_reload]');
+              if (r) r.click();
+              const btn = s.querySelector('button.btn-replace');
+              if (btn && btn.textContent.trim()==='R') btn.click();
+            }}
+          }});
       }}, 10);
     }})();
     """
-
-    # Вводим код в браузер
     driver.execute_script(js)
 
     try:
-        # Держим Python-процесс живым до Ctrl+C
         while True:
-            time.sleep(1)
+            # проверяем наличие alert и подтверждаем
+            try:
+                alert = driver.switch_to.alert
+                alert.accept()
+            except NoAlertPresentException:
+                pass
+
+            # даём JS-интервалу пожить 10 ms до следующей проверки
+            time.sleep(0.01)
     except KeyboardInterrupt:
         pass
     finally:
         driver.quit()
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Ultra-fast JS clicker')
-    parser.add_argument('profile', help='имя папки профиля в profiles/')
-    args = parser.parse_args()
+    p = argparse.ArgumentParser()
+    p.add_argument('profile', help='имя папки профиля в profiles/')
+    args = p.parse_args()
     main(args.profile)
