@@ -1,5 +1,3 @@
-# max_perf_clicker_with_alert.py
-# Улиtra-fast visual clicker без утечек памяти, уменьшенная нагрузка и увеличенная частота
 import argparse
 import time
 from selenium.common.exceptions import NoAlertPresentException
