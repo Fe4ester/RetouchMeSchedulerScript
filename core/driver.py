@@ -12,7 +12,7 @@ def init_driver(profile_name: str) -> webdriver.Chrome:
 
     options = Options()
     options.add_argument(f"--user-data-dir={os.fspath(profile_path)}")
-    options.add_argument("--headless=new")
+    # options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--blink-settings=imagesEnabled=false")
