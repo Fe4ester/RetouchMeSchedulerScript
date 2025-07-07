@@ -95,7 +95,7 @@ def main(profile: str):
                 alert.accept()
             except NoAlertPresentException:
                 pass
-            time.sleep(0.005)
+            time.sleep(0.01)
     except KeyboardInterrupt:
         pass
     finally:
