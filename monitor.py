@@ -26,115 +26,55 @@ def main(profile: str):
     sh, eh = config.HOUR_START, config.HOUR_END
 
     js = f"""
-    (function() {{
-      const sd='{sd}', ed='{ed}', sh={sh}, eh={eh};
-      let tsList=[], lastRebuild=0;
+(function() {{
+  const sd='{sd}', ed='{ed}', sh={sh}, eh={eh};
+  let tsList=[], lastRebuild=0;
 
-      function buildList() {{
-        tsList = Array.from(document.querySelectorAll('div.slot[data-timestamp]'))
-          .filter(el => {{
-            const ts = el.getAttribute('data-timestamp');
-            const d = new Date(+ts * 1000);
-            const ds = d.toISOString().slice(0, 10);
-            const h = d.getHours();
-            const txt = el.textContent;
+  function buildList() {{
+    tsList = Array.from(document.querySelectorAll('div.slot[data-timestamp]'))
+      .map(el=>el.getAttribute('data-timestamp'))
+      .filter(ts=>{{
+        const d=new Date(+ts*1000);
+        const ds=d.toISOString().slice(0,10), h=d.getHours();
+        return ds>=sd && ds<=ed && h>=sh && h<=eh;
+      }});
+    lastRebuild = performance.now();
+  }}
 
-            // фильтрация по дате, времени и содержимому
-            return (
-              ds >= sd &&
-              ds <= ed &&
-              h >= sh &&
-              h <= eh &&
-              !/\\b(0554|0770)\\b/.test(txt)
-            );
-          }})
-          .map(el => el.getAttribute('data-timestamp'));
+  function reloadNext() {{
+    if(tsList.length===0) return;
+    const ts=tsList.shift();
+    tsList.push(ts);
+    const sel=`div.slot[data-timestamp="${{ts}}"]`;
+    const slot=document.querySelector(sel);
+    if(slot) {{
+      const r=slot.querySelector('[data-btn_reload]'); if(r) r.click();
+      const btn=slot.querySelector('button.btn-replace');
+      if(btn && btn.textContent.trim()==='R') btn.click();
+    }}
+  }}
 
-        lastRebuild = performance.now();
-      }}
+  // мгновенный click по R через MutationObserver
+  new MutationObserver(muts=>muts.forEach(m=>m.addedNodes.forEach(n=>{{
+    if(n.nodeType===1 && n.matches('button.btn-replace') && n.textContent.trim()==='R') n.click();
+  }}))).observe(
+    document.querySelector('table.schedule tbody'),
+    {{ childList:true, subtree:true }}
+  );
 
-      function reloadNext() {{
-        if(tsList.length===0) return;
-        const ts=tsList.shift();
-        tsList.push(ts);
-        const sel=`div.slot[data-timestamp="${{ts}}"]`;
-        const slot=document.querySelector(sel);
-        if(slot) {{
-          const r=slot.querySelector('[data-btn_reload]'); if(r) r.click();
-          const btn=slot.querySelector('button.btn-replace');
-          if(btn && btn.textContent.trim()==='R') btn.click();
-        }}
-      }}
+  // основной цикл через setTimeout, чтобы избежать накопления интервалов
+  function loop() {{
+    reloadNext();
+    const now=performance.now();
+    if(now-lastRebuild>5*60*1000) buildList();
+    setTimeout(loop, 5);
+  }}
 
-      new MutationObserver(muts=>muts.forEach(m=>m.addedNodes.forEach(n=>{{
-        if(n.nodeType===1 && n.matches('button.btn-replace') && n.textContent.trim()==='R') n.click();
-      }}))).observe(
-        document.querySelector('table.schedule tbody'),
-        {{ childList:true, subtree:true }}
-      );
-
-      function loop() {{
-        reloadNext();
-        const now=performance.now();
-        if(now-lastRebuild>5*60*1000) buildList();
-        setTimeout(loop, 5);
-      }}
-
-      buildList();
-      loop();
-    }})();
-    """
-
-#     js = f"""
-# (function() {{
-#   const sd='{sd}', ed='{ed}', sh={sh}, eh={eh};
-#   let tsList=[], lastRebuild=0;
-#
-#   function buildList() {{
-#     tsList = Array.from(document.querySelectorAll('div.slot[data-timestamp]'))
-#       .map(el=>el.getAttribute('data-timestamp'))
-#       .filter(ts=>{{
-#         const d=new Date(+ts*1000);
-#         const ds=d.toISOString().slice(0,10), h=d.getHours();
-#         return ds>=sd && ds<=ed && h>=sh && h<=eh;
-#       }});
-#     lastRebuild = performance.now();
-#   }}
-#
-#   function reloadNext() {{
-#     if(tsList.length===0) return;
-#     const ts=tsList.shift();
-#     tsList.push(ts);
-#     const sel=`div.slot[data-timestamp="${{ts}}"]`;
-#     const slot=document.querySelector(sel);
-#     if(slot) {{
-#       const r=slot.querySelector('[data-btn_reload]'); if(r) r.click();
-#       const btn=slot.querySelector('button.btn-replace');
-#       if(btn && btn.textContent.trim()==='R') btn.click();
-#     }}
-#   }}
-#
-#   // мгновенный click по R через MutationObserver
-#   new MutationObserver(muts=>muts.forEach(m=>m.addedNodes.forEach(n=>{{
-#     if(n.nodeType===1 && n.matches('button.btn-replace') && n.textContent.trim()==='R') n.click();
-#   }}))).observe(
-#     document.querySelector('table.schedule tbody'),
-#     {{ childList:true, subtree:true }}
-#   );
-#
-#   // основной цикл через setTimeout, чтобы избежать накопления интервалов
-#   function loop() {{
-#     reloadNext();
-#     const now=performance.now();
-#     if(now-lastRebuild>5*60*1000) buildList();
-#     setTimeout(loop, 5);
-#   }}
-#
-#   // стартуем
-#   buildList();
-#   loop();
-# }})();
-# """
+  // стартуем
+  buildList();
+  loop();
+}})();
+"""
     driver.execute_script(js)
 
     try:
