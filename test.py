@@ -48,7 +48,7 @@ def main(profile: str):
                 pass
 
             # даём JS-интервалу пожить 10 ms до следующей проверки
-            time.sleep(0.1)
+            time.sleep(1)
     except KeyboardInterrupt:
         pass
     finally:
