@@ -1,79 +1,70 @@
-# test_click_cells_loop.py
+# max_perf_clicker.py
+# Скрипт для максимально быстрого параллельного клика по ячейкам в указанном диапазоне
 
 import argparse
 import time
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import StaleElementReferenceException
 from core.driver import init_driver
 import config
 
 
-def ts_in_range(ts: int) -> bool:
-    dt = datetime.fromtimestamp(ts)
-    date_str = dt.strftime("%Y-%m-%d")
-    hour = dt.hour
-    return (config.DATE_START <= date_str <= config.DATE_END) and \
-           (config.HOUR_START <= hour <= config.HOUR_END)
-
-
-def click_slot_by_ts(driver, ts: str):
-    try:
-        # Найти ячейку по timestamp свежим селектором
-        slot_div = driver.find_element(By.CSS_SELECTOR, f"div.slot[data-timestamp='{ts}']")
-        # Прокручиваем в центр и кликаем reload-кнопку
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", slot_div)
-        time.sleep(0.02)
-        btn = slot_div.find_element(By.CSS_SELECTOR, "[data-btn_reload]")
-        driver.execute_script("arguments[0].click();", btn)
-    except StaleElementReferenceException:
-        print(f"Stale element for timestamp {ts}, пропускаем")
-    except Exception as e:
-        print(f"Error clicking slot {ts}: {e}")
-
-
 def main(profile: str):
+    # Инициализация WebDriver с заданным профилем
     driver = init_driver(profile)
+    # Открываем целевую страницу
     driver.get(config.URL)
+    # Ждём прогрева страницы после загрузки
     time.sleep(1)
 
-    print("Старт бесконечных кликов по всем ячейкам в диапазоне...")
+    # Считываем границы диапазона из конфига
+    start_date = config.DATE_START    # формат YYYY-MM-DD
+    end_date = config.DATE_END        # формат YYYY-MM-DD
+    start_hour = config.HOUR_START
+    end_hour = config.HOUR_END
+
+    # Пред-компилированный JS, который:
+    # - Берёт все div.slot с data-timestamp
+    # - Преобразует timestamp в дату (YYYY-MM-DD) и час (UTC)
+    # - Фильтрует по диапазону дат и часов
+    # - Кликает по внутренней кнопке [data-btn_reload]
+    js_clicker = f"""
+    const slots = document.querySelectorAll('div.slot[data-timestamp]');
+    const sd = '{start_date}';
+    const ed = '{end_date}';
+    const sh = {start_hour};
+    const eh = {end_hour};
+    for (let s of slots) {{
+        const ts = Number(s.getAttribute('data-timestamp'));
+        const d = new Date(ts * 1000);
+        const date = d.toISOString().slice(0,10);
+        const h = d.getUTCHours();
+        if (date >= sd && date <= ed && h >= sh && h <= eh) {{
+            const btn = s.querySelector('[data-btn_reload]');
+            if (btn) btn.click();
+        }}
+    }}
+    """
+
+    # Основной бесконечный цикл: исполняем JS-кликер и даём минимальную паузу
     try:
         while True:
-            # Сканируем текущие timestamps
-            ts_list = []
-            for div in driver.find_elements(By.CSS_SELECTOR, "div.slot[data-timestamp]"):
-                try:
-                    ts = div.get_attribute("data-timestamp")
-                except StaleElementReferenceException:
-                    continue
-                if ts and ts_in_range(int(ts)):
-                    ts_list.append(ts)
-
-            if ts_list:
-                # Параллельно кликаем по свежим элементам
-                max_workers = min(len(ts_list), 10)
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    futures = [executor.submit(click_slot_by_ts, driver, ts) for ts in ts_list]
-                    for _ in as_completed(futures):
-                        pass
-
-            time.sleep(0.01)
+            driver.execute_script(js_clicker)  # клик по всем нужным ячейкам
+            time.sleep(0.01)                  # минимальная пауза
     except KeyboardInterrupt:
-        print("Остановлено пользователем.")
+        # Остановка по Ctrl+C
+        pass
     finally:
+        # Корректное завершение работы драйвера
         driver.quit()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="Постоянные параллельные клики по ячейкам в диапазоне"
+        description='Max performance cell clicker script'
     )
     parser.add_argument(
-        "profile",
-        help="имя профиля (папка в profiles/)"
+        'profile',
+        help='имя папки профиля в profiles/'
     )
     args = parser.parse_args()
     main(args.profile)
