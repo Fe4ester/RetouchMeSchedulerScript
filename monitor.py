@@ -1,6 +1,7 @@
 import argparse
 import time
 from selenium.common.exceptions import NoAlertPresentException
+from selenium.common.exceptions import InvalidSessionIdException
 from core.driver import init_driver
 import config
 import logging
@@ -86,8 +87,8 @@ def main(profile: str):
             except NoAlertPresentException:
                 pass
             time.sleep(config.PER_CELL_DELAY)
-    except KeyboardInterrupt:
-        pass
+    except (KeyboardInterrupt, InvalidSessionIdException):
+        logging.error("упал браузер, завершаем")
     finally:
         driver.quit()
 

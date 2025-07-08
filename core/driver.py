@@ -20,6 +20,12 @@ def init_driver(profile_name: str) -> webdriver.Chrome:
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-extensions")
 
+    # доп оптимизация
+    options.add_argument("--disable-background-networking")
+    options.add_argument("--disable-sync")
+    options.add_argument("--disable-features=NetworkService,NetworkServiceInProcess")
+    options.add_argument("--disable-gcm")
+
     logger.logger.debug(f"стартануло с профиля {profile_path}")
     driver = webdriver.Chrome(options=options)
     logger.logger.info("стартануло, слава богам, не зря молился")
