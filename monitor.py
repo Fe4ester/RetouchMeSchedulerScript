@@ -78,17 +78,23 @@ def main(profile: str):
 """
     driver.execute_script(js)
 
+    detected = False
+
     try:
+
         while True:
             try:
                 alert = driver.switch_to.alert
                 alert.accept()
-                logging.info('Запиздючилась смена, чекай на сайте')
+                if not detected:
+                    logging.info('Запиздючилась смена, чекай на сайте')
+                    detected = True
             except NoAlertPresentException:
                 pass
             time.sleep(config.PER_CELL_DELAY)
     except (KeyboardInterrupt, InvalidSessionIdException):
         logging.error("упал браузер, завершаем")
+        detected = False
     finally:
         driver.quit()
 
